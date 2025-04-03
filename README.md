@@ -18,7 +18,7 @@ processes documents, chunks them, and generates query-document pairs that can be
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/training-data-generator.git
+git clone https://github.com/gedankrayze/training-data-generator.git
 cd training-data-generator
 
 # Install requirements
