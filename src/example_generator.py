@@ -51,7 +51,6 @@ async def generate_examples_with_openai(
     """
     # Extract content and metadata
     content = chunk["content"]
-    file_name = chunk["file_name"]
 
     # Prepare system prompt
     system_prompt = f"""You are an expert at creating training data for information retrieval models. 
@@ -61,7 +60,12 @@ For each query:
 1. Create a natural, specific question someone might search for
 2. Identify the exact text passage that answers this query
 
-The document content is technical documentation about heating systems, heat pumps and related topics.
+Analyze the document content and create questions that are relevant to the specific domain and topics covered in the document.
+
+**Important Language Instructions:**
+- Detect the language of the document
+- Create the search queries in the same language as the document
+- Make sure the queries are natural questions that a native speaker would ask in that language
 """
 
     # Prepare user prompt
@@ -69,20 +73,31 @@ The document content is technical documentation about heating systems, heat pump
 
 DOCUMENT: {content}
 
-Create EXACTLY {example_count} training examples based on this content. Each should have:
-1. A natural search query someone might ask
+First, detect the language of the document.
+
+Create EXACTLY {example_count} training examples in the same language as the document. Each should have:
+1. A natural query in the document's language
 2. The positive document passage that answers the query
 
-I need EXACTLY {example_count} examples, no more and no less.
-Make sure the query is specific enough that it can be answered by the document, but general enough that a user might actually search for it.
+Make sure each query is specific enough to be answered by the document, but general enough that a user might actually search for it.
 
-Provide your response in JSON format.
+Provide your response in JSON format with the following structure:
+{{
+  "document_language": "detected language",
+  "examples": [
+    {{
+      "query": "question in document's language",
+      "positive_document": "passage from document that answers the query"
+    }}
+  ]
+}}
 """
 
     # Define JSON schema for the response
     json_schema = {
         "type": "object",
         "properties": {
+            "document_language": {"type": "string"},
             "examples": {
                 "type": "array",
                 "items": {
@@ -96,7 +111,7 @@ Provide your response in JSON format.
                 }
             }
         },
-        "required": ["examples"],
+        "required": ["examples", "document_language"],
         "additionalProperties": False
     }
 
@@ -131,13 +146,17 @@ Provide your response in JSON format.
             try:
                 response_data = json.loads(response_text)
 
+                document_language = response_data.get("document_language", "unknown")
                 examples = response_data["examples"]
+
+                # Log the detected language
+                logger.info(f"Detected document language: {document_language}")
 
                 # Check if we got the right number of examples
                 if len(examples) != example_count:
                     logger.warning(f"Expected {example_count} examples, but got {len(examples)}. Continuing anyway.")
 
-                # Generate negative examples for each example
+                # Process examples
                 complete_examples = []
                 for ex in examples:
                     # Select negative examples for this query
@@ -256,6 +275,8 @@ A good negative example should:
 1. Share keywords or topics with the query
 2. Look relevant at first glance
 3. Actually fail to provide the specific information requested in the query
+
+Select examples that are topically related to show a sophisticated understanding of relevance.
 """
 
     # If we have too few candidate chunks, just use them all
