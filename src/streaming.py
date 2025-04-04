@@ -162,7 +162,9 @@ async def process_directory_streaming(
         max_concurrent: int = 5,
         temperature: float = 0.7,
         seed: int = 42,
-        error_file: str = "errors.json"
+        error_file: str = "errors.json",
+        preprocess_md_tables: bool = False,
+        table_model: str = "gpt-4o-mini"
 ) -> int:
     """
     Process documents in a streaming fashion to minimize memory usage.
@@ -178,12 +180,15 @@ async def process_directory_streaming(
         max_chunk_size: Maximum chunk size in characters
         overlap_size: Number of characters to overlap between chunks
         batch_size: Number of files to process in each batch
-        model: OpenAI model to use
+        model: OpenAI model to use for example generation
         example_count: Number of examples to generate per chunk
         negative_count: Number of negative examples per positive example
         max_concurrent: Maximum number of concurrent API calls
         temperature: Temperature for generation
         seed: Random seed for reproducibility
+        error_file: Path to error log file
+        preprocess_md_tables: Whether to preprocess markdown tables
+        table_model: Model to use for table preprocessing
         
     Returns:
         int: Total number of examples generated
@@ -206,6 +211,10 @@ async def process_directory_streaming(
     # Setup for incremental JSON writing
     total_examples = 0
     run_key = f"streaming_{input_dir}_{len(file_paths)}_{model}"
+
+    if preprocess_md_tables:
+        run_key += "_table_processed"
+        logger.info(f"Table preprocessing enabled using {table_model}")
 
     # Check if we have a checkpoint
     checkpoint_data = checkpoint_mgr.load_checkpoint(run_key)
@@ -244,7 +253,12 @@ async def process_directory_streaming(
         all_chunks = []
         for file_path in batch_files:
             # Load document
-            doc = load_document(file_path)
+            doc = await load_document(
+                file_path,
+                api_key=api_key if preprocess_md_tables else None,
+                preprocess_md_tables=preprocess_md_tables,
+                model=table_model
+            )
 
             # Skip empty or error documents
             if not doc["content"] or "error" in doc:

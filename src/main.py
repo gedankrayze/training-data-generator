@@ -68,7 +68,13 @@ def parse_arguments():
                         help='Maximum number of concurrent API calls (default: 5)')
 
     parser.add_argument('--model', default="gpt-4o",
-                        help='OpenAI model to use (default: gpt-4o)')
+                        help='OpenAI model to use for example generation (default: gpt-4o)')
+
+    parser.add_argument('--preprocess-tables', action='store_true',
+                        help='Preprocess markdown tables to convert them to descriptive text')
+
+    parser.add_argument('--table-model', default="gpt-4o-mini",
+                        help='OpenAI model to use for table preprocessing (default: gpt-4o-mini)')
 
     parser.add_argument('--temperature', type=float, default=0.7,
                         help='Temperature for generation (default: 0.7)')
@@ -129,6 +135,10 @@ async def main_streaming(args):
     # Initialize checkpoint manager
     checkpoint_mgr = CheckpointManager(args.checkpoint_dir)
 
+    # Log table preprocessing status
+    if args.preprocess_tables:
+        logger.info(f"Table preprocessing enabled using {args.table_model} model")
+
     # Process directory in streaming fashion
     total_examples = await process_directory_streaming(
         args.input_dir,
@@ -145,7 +155,9 @@ async def main_streaming(args):
         args.max_concurrent,
         args.temperature,
         args.seed,
-        error_file=args.error_file
+        error_file=args.error_file,
+        preprocess_md_tables=args.preprocess_tables,
+        table_model=args.table_model
     )
 
     # If validation file is specified, split the data
@@ -184,12 +196,19 @@ async def main_standard(args):
         logger.error("OpenAI API key not provided. Set OPENAI_API_KEY environment variable or use --api-key")
         return
 
+    # Log table preprocessing status
+    if args.preprocess_tables:
+        logger.info(f"Table preprocessing enabled using {args.table_model} model")
+
     # Process input directory
     logger.info(f"Processing directory: {args.input_dir}")
-    chunks = process_directory(
+    chunks = await process_directory(
         args.input_dir,
         args.max_files,
-        args.max_chunk_size
+        args.max_chunk_size,
+        api_key=api_key if args.preprocess_tables else None,
+        preprocess_md_tables=args.preprocess_tables,
+        model=args.table_model
     )
 
     if not chunks:

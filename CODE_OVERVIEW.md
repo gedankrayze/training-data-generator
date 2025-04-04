@@ -15,6 +15,7 @@ training-data-generator/
 │   ├── document_processor.py # Document loading and chunking
 │   ├── checkpoint.py        # Checkpoint management for recovery
 │   ├── example_generator.py # LLM-based example generation
+│   ├── table_processor.py   # Markdown table preprocessing
 │   └── streaming.py         # Memory-efficient streaming processing
 ├── tests/                   # Test modules
 │   ├── __init__.py
@@ -107,7 +108,21 @@ Benefits:
 - More resilient to interruptions
 - Better resource utilization for large jobs
 
-### 8. Modularity and Extensibility
+### 8. Markdown Table Preprocessing
+
+- Added intelligent conversion of markdown tables to descriptive text
+- Uses LLMs to transform tabular data into more natural language
+- Prevents tables from being split across chunks
+- Improves the quality of generated queries for tabular information
+
+Benefits:
+
+- Better handling of documents with complex tables
+- More natural and coherent training examples
+- Improved context preservation for tabular data
+- Seamless integration with existing chunking process
+
+### 9. Modularity and Extensibility
 
 - Separated concerns into distinct modules
 - Added clear interfaces between components
@@ -145,6 +160,8 @@ Benefits:
 4. **Checkpoint Directory**: Added --checkpoint-dir parameter for custom checkpoint locations
 
 5. **Max Concurrent**: Added --max-concurrent parameter for controlling API rate limits
+
+6. **Table Preprocessing**: Added --preprocess-tables flag and --table-model parameter for handling markdown tables
 
 ## Next Steps and Future Improvements
 

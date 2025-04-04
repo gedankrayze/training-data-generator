@@ -10,12 +10,16 @@ from typing import Dict, Any, List, Optional
 
 from tqdm import tqdm
 
+from .table_processor import preprocess_tables
+
 # Configure logging
 logger = logging.getLogger("document_processor")
 
 
 def clean_text(text: str) -> str:
     """Clean and normalize text."""
+    # Remove ZWNBSP characters (U+FEFF)
+    text = text.replace('\ufeff', '')
     # Replace multiple whitespace with single space
     text = re.sub(r'\s+', ' ', text)
     # Remove leading/trailing whitespace
@@ -23,12 +27,20 @@ def clean_text(text: str) -> str:
     return text
 
 
-def load_document(file_path: str) -> Dict[str, Any]:
+async def load_document(
+        file_path: str,
+        api_key: Optional[str] = None,
+        preprocess_md_tables: bool = False,
+        model: str = "gpt-4o-mini"
+) -> Dict[str, Any]:
     """
     Load a document from file and extract content.
 
     Args:
         file_path: Path to the document file
+        api_key: OpenAI API key for table preprocessing
+        preprocess_md_tables: Whether to preprocess markdown tables
+        model: LLM model to use for preprocessing
 
     Returns:
         Dict containing document content and metadata
@@ -43,7 +55,12 @@ def load_document(file_path: str) -> Dict[str, Any]:
         # Extract content based on file type
         if extension == '.md' or extension == '.txt':
             # For markdown and text files, keep content as is
-            pass
+            content = content.replace('\ufeff', '')
+
+            # Preprocess markdown tables if enabled and API key provided
+            if preprocess_md_tables and api_key and extension == '.md':
+                logger.info(f"Preprocessing tables in {file_name}")
+                content = await preprocess_tables(content, api_key, model)
         else:
             # For other file types, try to extract plain text
             content = clean_text(content)
@@ -238,8 +255,14 @@ def chunk_document_with_overlap(
     return chunks
 
 
-def process_directory(input_dir: str, max_files: Optional[int] = None, max_chunk_size: int = 2000) -> List[
-    Dict[str, Any]]:
+async def process_directory(
+        input_dir: str,
+        max_files: Optional[int] = None,
+        max_chunk_size: int = 2000,
+        api_key: Optional[str] = None,
+        preprocess_md_tables: bool = False,
+        model: str = "gpt-4o-mini"
+) -> List[Dict[str, Any]]:
     """
     Process all documents in a directory and its subdirectories.
 
@@ -247,6 +270,9 @@ def process_directory(input_dir: str, max_files: Optional[int] = None, max_chunk
         input_dir: Directory containing documents
         max_files: Maximum number of files to process (None for all)
         max_chunk_size: Maximum chunk size in characters
+        api_key: OpenAI API key for table preprocessing
+        preprocess_md_tables: Whether to preprocess markdown tables
+        model: LLM model to use for preprocessing
 
     Returns:
         List of processed document chunks
@@ -271,7 +297,12 @@ def process_directory(input_dir: str, max_files: Optional[int] = None, max_chunk
     # Process each file
     for file_path in tqdm(file_paths, desc="Processing files"):
         # Load document
-        doc = load_document(file_path)
+        doc = await load_document(
+            file_path,
+            api_key=api_key,
+            preprocess_md_tables=preprocess_md_tables,
+            model=model
+        )
 
         # Skip empty or error documents
         if not doc["content"] or "error" in doc:
