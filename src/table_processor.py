@@ -9,6 +9,7 @@ from typing import List, Dict, Any
 from openai import AsyncOpenAI
 
 # Configure logging
+# logging.basicConfig(level=logging.DEBUG)  # Temporarily set to DEBUG for more detailed logs
 logger = logging.getLogger("table_processor")
 
 
@@ -22,22 +23,52 @@ def detect_tables(content: str) -> List[Dict[str, Any]]:
     Returns:
         List of dictionaries with table info (start, end positions and content)
     """
-    # This regex pattern matches markdown tables:
-    # - First line with pipes and text
-    # - Second line with pipes and dashes/colons for alignment
-    # - Subsequent lines with pipes and text
-    table_pattern = r'(\|[^\n]+\|\n\s*\|[\s*:?-]+\|\s*\n(?:\s*\|[^\n]+\|\s*\n)+)'
-
     tables = []
-    for match in re.finditer(table_pattern, content, re.MULTILINE):
-        tables.append({
-            'start': match.start(),
-            'end': match.end(),
-            'content': match.group(0)
-        })
 
-    logger.info(f"Detected {len(tables)} markdown tables in content")
-    return tables
+    # Pattern 1: Numbered format like "1| text| 2| text"
+    pattern1 = r'(\d+\|[^\n]+\|\s*\d*\|[^\n]*\n[-|:\s]+\n(?:(?:\d*\|[^\n]+\|[^\n]*\n)+|(?:[^\n]+\|\s*\|[^\n]*\n)+))'
+
+    # Pattern 2: Standard format like "|text|text|"
+    pattern2 = r'(\|[^\n]+\|\n[-|:\s]+\n(?:\|[^\n]+\|\n)+)'
+
+    # Alternative format like "Symbol| Meaning" (no leading pipe)
+    pattern3 = r'([A-Za-z0-9]+\|[^\n]+\n[-|:\s]+\n(?:[A-Za-z0-9\!\[\]]+\|[^\n]+\n)+)'
+
+    # Apply each pattern
+    for i, pattern in enumerate([pattern1, pattern2, pattern3]):
+        try:
+            for match in re.finditer(pattern, content, re.MULTILINE):
+                table_content = match.group(0)
+
+                # Basic validation - ensure it has multiple lines and pipe characters
+                lines = table_content.strip().split('\n')
+                if len(lines) >= 3 and all('|' in line for line in lines):
+                    tables.append({
+                        'start': match.start(),
+                        'end': match.end(),
+                        'content': table_content,
+                        'pattern_used': i + 1
+                    })
+                    logger.debug(f"Detected table with pattern {i + 1}: {table_content[:50]}...")
+        except re.error as e:
+            logger.error(f"Error with pattern {i + 1}: {e}")
+
+    # Remove any duplicate tables (might be detected by multiple patterns)
+    unique_tables = []
+    positions = set()
+
+    for table in tables:
+        pos = (table['start'], table['end'])
+        if pos not in positions:
+            positions.add(pos)
+            unique_tables.append(table)
+
+    logger.info(f"Detected {len(unique_tables)} unique markdown tables in content")
+
+    # Sort tables by their position in the document
+    unique_tables.sort(key=lambda x: x['start'])
+
+    return unique_tables
 
 
 async def preprocess_tables(content: str, api_key: str, model: str = "gpt-4o-mini") -> str:
@@ -52,8 +83,10 @@ async def preprocess_tables(content: str, api_key: str, model: str = "gpt-4o-min
     Returns:
         Processed content with tables converted to descriptive text
     """
-    # If no tables found, return the original content
+    # Detect tables in the content
     tables = detect_tables(content)
+
+    # If no tables found, return the original content
     if not tables:
         return content
 
@@ -61,8 +94,13 @@ async def preprocess_tables(content: str, api_key: str, model: str = "gpt-4o-min
     client = AsyncOpenAI(api_key=api_key)
 
     # Process the content in reverse order to preserve positions
+    # (from end to beginning so position changes don't affect other matches)
     for table in reversed(tables):
         try:
+            # Log some useful info about the table being processed
+            logger.info(
+                f"Processing table at position {table['start']}-{table['end']} (pattern {table.get('pattern_used', 'unknown')})")
+            
             # Convert table to descriptive text
             flattened_table = await convert_table_with_llm(
                 table['content'],
@@ -81,7 +119,7 @@ async def preprocess_tables(content: str, api_key: str, model: str = "gpt-4o-min
             logger.error(f"Error processing table: {e}")
             # Continue with the original table if there's an error
 
-    logger.info(f"Preprocessed {len(tables)} tables in content")
+    logger.info(f"Successfully preprocessed {len(tables)} tables in content")
     return content
 
 
@@ -121,6 +159,9 @@ Use a natural paragraph format that clearly explains the table structure and con
 """
 
     try:
+        # Log the table being sent to the LLM (truncated for brevity)
+        logger.debug(f"Sending table to LLM: {table[:100]}...")
+        
         # Call the LLM API
         response = await client.chat.completions.create(
             model=model,
@@ -134,6 +175,9 @@ Use a natural paragraph format that clearly explains the table structure and con
 
         # Get the generated description
         table_description = response.choices[0].message.content.strip()
+
+        # Log a preview of the result
+        logger.debug(f"Received response from LLM: {table_description[:100]}...")
 
         # Add a newline before and after to maintain paragraph separation
         return f"\n\n{table_description}\n\n"
