@@ -1,5 +1,7 @@
 # Training Data Generator for SPLADE Model Fine-tuning
 
+> ‼️ Please use SPLADE Model Trainer at https://github.com/gedankrayze/splade-model-trainer which is a next generation of our tools for training data preparation through disitaltion and, of course, SPLADe model training.
+
 This tool uses LLMs (like OpenAI's GPT models) to generate high-quality training data for SPLADE model fine-tuning. It
 processes documents, chunks them, and generates query-document pairs that can be used for training.
 
